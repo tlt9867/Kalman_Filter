@@ -1,0 +1,814 @@
+#%%
+import numpy as np
+import pandas as pd
+import math
+import networkx as nx
+import matplotlib.pyplot as plt
+import matplotlib as mpl
+from mpl_toolkits.mplot3d import axes3d
+import seaborn as sns
+#%matplotlib notebook
+sns.set()
+import os
+import time
+import random
+import pygraphviz as pgv
+import cvxpy as cp
+import scipy as scipy
+import statistics as stat
+from scipy.spatial import KDTree
+import random
+import json
+import math
+# Generate points in circle
+pi = math.pi
+def PointsInCircum(r,n):
+    l=[((math.cos(2*pi/n*x)*r)+600,(math.sin(2*pi/n*x)*r)+600) for x in range(0,n)]
+    return l
+#%%
+##time series on edges
+N=20
+##time  series on node coordinates
+
+# M_nd=2*N #multiplied by 2 because of x and y coordinated for each node
+# X_nd=np.empty((M_nd,0)) #this will the system series for nodes
+# MUs_nd=np.empty((M_nd,0))
+# Y_nd=np.empty((M_nd,0)) #this will the observed series for nodes
+# Y_nd=np.append(Y_nd,np.zeros((M_nd,1)),axis=1)
+
+# l = np.array(PointsInCircum(400, M_nd))
+# m=0
+# L=np.empty((M_nd,1))
+# for i in range(0,M_nd,2):
+#     L[i]=l[m,0]
+#     L[i+1]=l[m,1]
+#     m=m+1
+    
+# X_nd=np.append(X_nd,L,axis=1) #initializing node positions at 0th time point
+
+
+# t=100 #time points
+
+# # assign parameter values to your liking
+# # C=0.95*np.eye(M)+0.01*np.random.normal(0, 1,(M,M))
+# C_nd=np.eye(M_nd)
+# # D_nd=1.1*np.eye(M_nd)+0.2*np.random.normal(0, 1,(M_nd,M_nd))
+# random.seed(89)
+# D_nd=np.eye(M_nd)+3*np.random.normal(0, 0.01,(M_nd,M_nd))
+# # D_nd=np.eye(M_nd)
+# Gam_nd=1*np.eye(M_nd)
+# sigsq1_nd=100
+# Q_nd=sigsq1_nd*np.eye(M_nd)
+# # Q=0.2*np.random.normal(0, 1,(M,M))+np.eye(M)
+# sigsq2_nd=10 #10 #0.1
+# Lam_nd=sigsq2_nd*np.eye(M_nd)
+
+# random.seed(65)
+
+# #generate series
+# MUs_nd=np.append(MUs_nd,np.array([np.random.multivariate_normal(np.zeros(M_nd), Q_nd)]).T,axis=1)
+# Xprev_nd=X_nd.copy()
+# mu_nd=MUs_nd.copy()
+# for i in range(t):
+#     Xnew_nd=np.dot(C_nd,Xprev_nd)+mu_nd #+np.dot(Gam,mu)
+#     X_nd=np.append(X_nd,Xnew_nd,axis=1)
+#     random.seed(i+86)
+#     w_nd=np.array([np.random.multivariate_normal(np.zeros(M_nd), Lam_nd)]).T
+#     Ynew_nd=np.dot(D_nd,Xnew_nd)+w_nd
+#     Y_nd=np.append(Y_nd,Ynew_nd,axis=1)
+#     Xprev_nd=Xnew_nd.copy()
+#     random.seed(i+59)
+#     mu_nd=np.array([np.random.multivariate_normal(np.zeros(M_nd), Q_nd)]).T
+#     MUs_nd=np.append(MUs_nd,mu_nd,axis=1)
+    
+# print(X_nd.shape)
+# print(Y_nd.shape)
+
+M=int(N*(N-1)/2) #number of unique edges, since the graph is symmetric
+S = 0.3
+X=np.empty((M,0)) #this will the system series for edges
+MUs=np.empty((M,0))
+Y=np.empty((M,0)) #this will the observed series for edges
+Y=np.append(Y,np.zeros((M,1)),axis=1)
+random.seed(42)
+X=np.append(X,np.random.rand(M,1),axis=1) #initializing edge weights at 0th time point
+# ind = np.random.choice(M,int(0.3*M),replace=False)
+# X[ind]=0
+t=1000 #time points
+# assign parameter values to your liking
+C=0.95*np.eye(M)
+upper_ind = np.triu_indices(M)
+C_r_ind = np.random.choice(upper_ind[0],int(S*len(upper_ind[0])),replace=False)
+C_c_ind = np.random.choice(upper_ind[1],int(S*len(upper_ind[1])),replace=False)
+ind = (C_r_ind,C_c_ind)
+C[ind]=np.random.normal(0,0.005,C[ind].shape[0])
+C[C==0].shape[0]/(M*M)
+#C=0.95*np.eye(M)
+#D=2*np.eye(M)+0.1*np.random.normal(0, 1,(M,M))
+
+random.seed(32)
+D=np.eye(M)+0.001*np.random.normal(0, 1,(M,M))
+# D_ind = np.random.choice(M*M,int(0.6*M*M),replace=False)
+# D = D.flatten()
+# D[D_ind]=0
+# D= D.reshape((M,M))
+# D[range(M),range(M)]=1
+
+#D=np.eye(M)
+Gam=1*np.eye(M)
+sigsq1=0.01 #1
+Q=sigsq1*np.eye(M)
+#Q=0.2*np.random.normal(0, 1,(M,M))+np.eye(M)
+sigsq2=0.1 #0.01
+Lam=sigsq2*np.eye(M)
+random.seed(54)
+
+#%%
+#generate series
+MUs=np.append(MUs,np.array([np.random.multivariate_normal(np.zeros(M), Q)]).T,axis=1)
+Xprev=X.copy()
+mu=MUs.copy()
+for i in range(t): 
+    Xnew=np.dot(C,Xprev)+mu #+np.dot(Gam,mu)
+    # Xnew[Xnew<1e-5]=0
+    X=np.append(X,Xnew,axis=1)
+    random.seed(i+23)
+    w=np.array([np.random.multivariate_normal(np.zeros(M), Lam)]).T
+    Ynew=np.dot(D,Xnew)+w
+    Y=np.append(Y,Ynew,axis=1)
+    Xprev=Xnew.copy()
+    random.seed(i+76)
+    mu=np.array([np.random.multivariate_normal(np.zeros(M), Q)]).T
+    MUs=np.append(MUs,mu,axis=1)
+#%%
+def _smooth_pair(P_s, Ht):
+    r"""Calculate pairwise covariance between hidden states
+
+    Calculate covariance between hidden states at :math:`t` and :math:`t-1` for
+    all time step pairs
+
+    Parameters
+    ----------
+    smoothed_state_covariances : [n_timesteps, n_dim_state, n_dim_state] array
+        covariance of hidden state given all observations
+    kalman_smoothing_gain : [n_timesteps-1, n_dim_state, n_dim_state]
+        Correction matrices from Kalman Smoothing
+
+    Returns
+    -------
+    pairwise_covariances : [n_timesteps, n_dim_state, n_dim_state] array
+        Covariance between hidden states at times t and t-1 for t =
+        [1...n_timesteps-1].  Time 0 is ignored.
+    """
+    n_dim_state, _,n_timesteps = P_s.shape
+    pairwise_covariances = np.zeros(( n_dim_state, n_dim_state,n_timesteps))
+    for t in range(1, n_timesteps):
+        pairwise_covariances[:,:,t] = (
+            np.dot(P_s[:,:,t],
+                   Ht[:,:,t - 1].T)
+        )
+    return pairwise_covariances
+def _em_observation_matrix(X_s,Y,P_s):
+    r"""Apply the EM algorithm to parameter `observation_matrix`
+
+    Maximize expected log likelihood of observations with respect to the
+    observation matrix `observation_matrix`.
+
+    .. math::
+
+        C &= ( \sum_{t=0}^{T-1} (z_t - d_t) \mathbb{E}[x_t]^T )
+             ( \sum_{t=0}^{T-1} \mathbb{E}[x_t x_t^T] )^-1
+
+    """
+    n_dim_state,_ = X_s.shape
+    n_dim_obs,n_timesteps = Y.shape
+    res1 = np.zeros((n_dim_obs, n_dim_state))
+    res2 = np.zeros((n_dim_state, n_dim_state))
+    for t in range(n_timesteps):
+        if not np.any(np.ma.getmask(Y[:,t])):
+            res1 += np.outer(Y[:,t],
+                             X_s[:,t])
+            res2 += (
+                P_s[:,:,t]
+                + np.outer(X_s[:,t], X_s[:,t])
+            )
+    return np.dot(res1, np.linalg.pinv(res2))    
+
+def _em_observation_covariance(X_s,Y,P_s,D_E):
+    n_dim_state,_ = X_s.shape
+    n_dim_obs,n_timesteps = Y.shape
+    res = np.zeros((n_dim_obs, n_dim_obs))
+    n_obs = 0
+    for t in range(n_timesteps):
+        if not np.any(np.ma.getmask(Y[:,t])):
+            err = (
+                Y[:,t]
+                - np.dot(D_E, X_s[:,t])
+                
+            )
+            res += (
+                np.outer(err, err)
+                + np.dot(D_E,
+                            np.dot(P_s[:,:,t],
+                                D_E.T))
+            )
+            n_obs += 1
+    return  (1.0 / n_obs) * res
+
+def _em_transition_matrix( X_s,P_s,pairwise_covariances):
+    r"""Apply the EM algorithm to parameter `transition_matrix`
+
+    Maximize expected log likelihood of observations with respect to the state
+    transition matrix `transition_matrix`.
+
+    .. math::
+
+        A &= ( \sum_{t=1}^{T-1} \mathbb{E}[x_t x_{t-1}^{T}]
+                - b_{t-1} \mathbb{E}[x_{t-1}]^T )
+             ( \sum_{t=1}^{T-1} \mathbb{E}[x_{t-1} x_{t-1}^T] )^{-1}
+    """
+    n_dim_state, _,n_timesteps = P_s.shape
+    res1 = np.zeros((n_dim_state, n_dim_state))
+    res2 = np.zeros((n_dim_state, n_dim_state))
+    for t in range(1, n_timesteps):
+        res1 += (pairwise_covariances[:,:,t]
+            + np.outer(X_s[:,t],
+                       X_s[:,t - 1])
+        )
+        res2 += (
+            P_s[:,:,t - 1]
+            + np.outer(X_s[:,t - 1],
+                        X_s[:,t - 1])
+        )
+    return np.dot(res1, np.linalg.pinv(res2))
+
+
+def _em_transition_covariance(transition_matrix, 
+                              X_s, P_s,
+                              pairwise_covariances):
+    r"""Apply the EM algorithm to parameter `transition_covariance`
+
+    Maximize expected log likelihood of observations with respect to the
+    transition covariance matrix `transition_covariance`.
+
+    .. math::
+
+        Q &= \frac{1}{T-1} \sum_{t=0}^{T-2}
+                (\mathbb{E}[x_{t+1}] - A_t \mathbb{E}[x_t] - b_t)
+                    (\mathbb{E}[x_{t+1}] - A_t \mathbb{E}[x_t] - b_t)^T
+                + A_t Var(x_t) A_t^T + Var(x_{t+1})
+                - Cov(x_{t+1}, x_t) A_t^T - A_t Cov(x_t, x_{t+1})
+    """
+    n_dim_state, _,n_timesteps = P_s.shape
+    res = np.zeros((n_dim_state, n_dim_state))
+    for t in range(n_timesteps - 1):
+        err = (
+            X_s[:,t + 1]
+            - np.dot(transition_matrix, X_s[:,t])
+        )
+        Vt1t_A = (
+            np.dot(pairwise_covariances[:,:,t + 1],
+                   transition_matrix.T)
+        )
+        res += (
+            np.outer(err, err)
+            + np.dot(transition_matrix,
+                     np.dot(P_s[:,:,t],
+                            transition_matrix.T))
+            + P_s[:,:,t + 1]
+            - Vt1t_A - Vt1t_A.T
+        )
+
+    return (1.0 / (n_timesteps - 1)) * res
+#%%
+def Para_est(X_k,Y,M,t):
+    C_E_U = np.sum(np.array([Xk[:,i].reshape(M,1)@\
+        Xk[:,i-1].reshape(M,1).T for i in range(2,t+1)]),axis=0)
+    C_E_D = np.sum(np.array([Xk[:,i-1].reshape(M,1)@\
+        Xk[:,i-1].reshape(M,1).T for i in range(2,t+1)]),axis=0)
+    C_E = C_E_U@np.linalg.pinv(C_E_D)
+    D_E_U = np.sum(np.array([Y[:,i].reshape(M,1)@\
+        Xk[:,i].reshape(M,1).T for i in range(1,t+1)]),axis=0)
+    D_E_D = np.sum(np.array([Xk[:,i].reshape(M,1)@\
+        Xk[:,i].reshape(M,1).T for i in range(1,t+1)]),axis=0)
+    D_E = D_E_U@np.linalg.pinv(D_E_D)
+    Lam_E = 1/(t-1)*np.sum(np.array([(Y[:,i].reshape(M,1)-\
+        D_E@Xk[:,i].reshape(M,1))@(Y[:,i].reshape(M,1)-\
+            D_E@Xk[:,i].reshape(M,1)).T for i in range(1,t+1)]),axis=0)
+    Q_E =  (1/t)*np.sum(np.array([(Xk[:,i].reshape(M,1)-\
+        C_E@Xk[:,i-1].reshape(M,1))@(Xk[:,i].reshape(M,1)-\
+            C_E@Xk[:,i-1].reshape(M,1)).T for i in range(2,t+1)]),axis=0)
+    return C_E, D_E, Lam_E, Q_E
+#%%
+def Para_est(X_s,Y,P_s,Ht,given):
+    # C_E_U = np.sum(np.array([Xk[:,i].reshape(M,1)@\
+    #     Xk[:,i-1].reshape(M,1).T for i in range(2,t+1)]),axis=0)
+    # C_E_D = np.sum(np.array([Xk[:,i-1].reshape(M,1)@\
+    #     Xk[:,i-1].reshape(M,1).T for i in range(2,t+1)]),axis=0)
+    # C_E = C_E_U@np.linalg.pinv(C_E_D)
+    # D_E_U = np.sum(np.array([Y[:,i].reshape(M,1)@\
+    #     Xk[:,i].reshape(M,1).T for i in range(1,t+1)]),axis=0)
+    # D_E_D = np.sum(np.array([Xk[:,i].reshape(M,1)@\
+    #     Xk[:,i].reshape(M,1).T for i in range(1,t+1)]),axis=0)
+    # D_E = D_E_U@np.linalg.pinv(D_E_D)
+    pairwise_covariances = _smooth_pair(P_s,Ht)
+    if 'C' in given:
+        C_E = given['C']
+    else:
+        C_E = _em_transition_matrix(X_s,P_s,pairwise_covariances)
+    if 'D' in given:
+        D_E = given['D']
+    else:
+        D_E = _em_observation_matrix(X_s,Y,P_s)
+    if 'Lam' in given:
+        Lam_E = given['Lam']
+    else:
+        Lam_E = _em_observation_covariance(X_s,Y,P_s,D_E)
+    if 'Q' in given:
+        Q_E = given['Q']
+    else:
+        Q_E = _em_transition_covariance(C_E,X_s,P_s,pairwise_covariances)
+    # Lam_E = 1/(t-1)*np.sum(np.array([(Y[:,i].reshape(M,1)-\
+    #     D_E@Xk[:,i].reshape(M,1))@(Y[:,i].reshape(M,1)-\
+    #         D_E@Xk[:,i].reshape(M,1)).T for i in range(1,t+1)]),axis=0)
+    # Q_E =  (1/t)*np.sum(np.array([(Xk[:,i].reshape(M,1)-\
+    #     C_E@Xk[:,i-1].reshape(M,1))@(Xk[:,i].reshape(M,1)-\
+    #         C_E@Xk[:,i-1].reshape(M,1)).T for i in range(2,t+1)]),axis=0)
+    return C_E, D_E, Lam_E, Q_E
+#%%
+print(np.linalg.norm(Y[:,1:]-X[:,1:]))
+ITER = 15
+Lam_E = np.eye(M)
+Q_E = np.eye(M)    
+C_E = 2*np.eye(M)
+D_E = 3*np.eye(M)
+_final = np.empty((M,t+1))
+
+# initial_guess = Y[:,1]
+prev_C = 999
+prev_D = 999
+prev_Lam = 999
+prev_Q = 999
+
+
+
+for itr in range(ITER):
+    prev_C_E = C_E
+    prev_D_E = D_E
+    prev_Lam_E = Lam_E
+    prev_Q_E = Q_E
+    given = {}
+    if itr == 0:
+        P = np.empty((M,M,t+1))
+        Xk =np.empty((M,t+1))
+        Xp = np.empty((M,t+1))
+        Xk[:,0]=Y[:,1]
+        P[:,:,0]=np.eye(M)*10
+    else:
+        Xk[:,0]=X_s[:,1]
+        P[:,:,0]=P_s[:,:,0]
+        prev_C = new_C
+        prev_D = new_D
+        prev_Lam = new_Lam
+        prev_Q = new_Q
+
+    _time_start = time.time()
+    _final_temp = _final
+    PE = np.empty((M,M,t))
+    # C_s = scipy.sparse.csc_matrix(C_E)
+    # D_s = scipy.sparse.csc_matrix(D_E)
+    dift1 = []
+    dift2 = []
+    dift3 = []
+    dift4 = []
+    _temp = 0
+    _flag = True
+    for i in range(1,t+1):
+        st1 = time.time()
+        # Xp[:,i] = C_s@Xk[:,i]
+        # PE[:,:,i-1]= C_s@P[:,:,i-1]@C_s.T+Q_E
+        # SK =D_s@PE[:,:,i-1]@D_s.T+Lam_E
+        Xp[:,i] = np.dot(C_E,Xk[:,i-1])
+        PE[:,:,i-1]= np.dot(C_E,np.dot(P[:,:,i-1],C_E.T))+Q_E
+        SK =np.dot(D_E,np.dot(PE[:,:,i-1],D_E.T))+Lam_E
+        if i!=1:
+            _flag = (np.linalg.norm(SK-_temp) > 1e-9)
+        st2 = time.time()
+        _temp = SK
+        if not _flag:
+            print(SK[SK<1e-10].shape)
+        if _flag:
+            sk_inv = np.linalg.inv(SK)
+        # st2 = time.time()
+        # sk_inv = np.linalg.inv(SK)
+        # else:
+        #     L = np.matmul(np.matmul(U.T,SK),U)
+        #     Linv = np.diag(1/np.diag(L))
+        
+        et1 = time.time()
+        
+        # sk_inv = np.matmul(np.matmul(U,Linv),U.T)
+        
+        # Kk = PE[:,:,i-1]@D_s.T@sk_inv
+        # P[:,:,i]=np.dot((np.eye(M)-Kk@D_s),PE[:,:,i-1])
+        # Xknew = Xp[:,i]+np.dot(Kk,(Y[:,i]-D_s@Xp[:,i]))
+        Kk = np.dot(PE[:,:,i-1],np.dot(D_E.T,sk_inv))
+        
+        P[:,:,i]=np.dot((np.eye(M)-np.dot(Kk,D_E)),PE[:,:,i-1])
+        
+        Xk[:,i] = Xp[:,i]+np.dot(Kk,(Y[:,i]-np.dot(D_E,Xp[:,i])))
+        zt = time.time()
+        dift1 = np.append(dift1,st2-st1)
+        dift2 = np.append(dift2,et1-st2)
+        dift3 = np.append(dift3,zt-et1)
+    print(np.mean(dift1))
+    print(np.mean(dift2))
+    print(np.mean(dift3))
+    print(zt-st1)
+    print('Xk-X',np.linalg.norm(Xk[:,:t]-X[:,1:]))
+
+    X_s = np.empty((M,t+1))
+    X_s[:,-1]=Xk[:,-1]
+    P_s = np.empty((M,M,t))
+    P_s[:,:,-1]=P[:,:,-1]
+    Ht= np.empty((M,M,t-1))
+    for i in reversed(range(1,t)):
+        Ht[:,:,i-1] = np.dot(P[:,:,i],np.dot(C_E,np.linalg.pinv(PE[:,:,i])))
+        X_s[:,i] = Xk[:,i+1]+np.dot(Ht[:,:,i-1],(X_s[:,i+1]-Xp[:,i+1]))
+        P_s[:,:,i-1] = P[:,:,i]+np.dot(Ht[:,:,i-1],np.dot((P_s[:,:,i]-PE[:,:,i]),Ht[:,:,i-1].T))
+    
+
+        
+    print('Xs-X',np.linalg.norm(X_s-X))
+
+    _final = X_s
+    # print(np.linalg.norm(_final_temp-_final)/np.linalg.norm(_final))
+    # if(np.linalg.norm(_final_temp-_final)/np.linalg.norm(_final)<1e-1):
+    #     break
+    C_E, D_E, Lam_E, Q_E = Para_est(X_s[:,1:],Y[:,1:],P_s,Ht,given)
+    new_C = np.linalg.norm(C_E-prev_C_E)/np.linalg.norm(prev_C_E)
+    new_D = np.linalg.norm(D_E-prev_D_E)/np.linalg.norm(prev_D_E)
+    new_Lam = np.linalg.norm(Lam_E-prev_Lam_E)/np.linalg.norm(prev_Lam_E)
+    new_Q = np.linalg.norm(Q_E-prev_Q_E)/np.linalg.norm(prev_Q_E)
+    print(np.linalg.norm(Lam_E-prev_Lam_E)/np.linalg.norm(prev_Lam_E))
+    if (abs(new_C-prev_C)<1e-1):
+        given['C']=C_E
+    if (abs(new_D-prev_D)<1e-1):
+        given['D']=D_E
+    if (abs(new_Lam-prev_Lam)<1e-1):
+        given['Lam']=Lam_E
+    if (abs(new_Q-prev_Q)<1e-1):
+        given['Q']=Q_E
+    if 'C' in given and 'D' in given and 'Lam' in given and 'Q' in given:
+        break
+    _time_end = time.time()
+    print("total time",_time_end-_time_start)
+    # C_E[C_E<1e-5]=0
+    # D_E[D_E<1e-5]=0
+    # Lam_E[Lam_E<1e-5]=0
+    # Q_E[Q_E<1e-5]=0
+    # print(np.linalg.norm(C_E - C) )
+    # print(np.linalg.norm(Q_E - Q) )
+    # print(np.linalg.norm(D_E - D) )
+    # print(np.linalg.norm(Lam_E - Lam) )
+
+#%%
+print(np.linalg.norm(Y[:,1:]-X[:,1:]))
+ITER = 15
+Lam_E = np.eye(M)
+Q_E = np.eye(M)    
+C_E = 2*np.eye(M)
+D_E = 3*np.eye(M)
+_final = np.empty((M,t+1))
+
+# initial_guess = Y[:,1]
+prev_C = 999
+prev_D = 999
+prev_Lam = 999
+prev_Q = 999
+
+
+
+for itr in range(ITER):
+    prev_C_E = C_E
+    prev_D_E = D_E
+    prev_Lam_E = Lam_E
+    prev_Q_E = Q_E
+    if itr == 0:
+        P = np.empty((M,M,t+1))
+        Xk =np.empty((M,t+1))
+        Xp = np.empty((M,t+1))
+        Xk[:,0]=Y[:,1]
+        P[:,:,0]=10*np.eye(M)
+    else:
+        # Xk[:,0]=X_s[:,1]
+        # P[:,:,0]=P_s[:,:,0]
+        prev_C = new_C
+        prev_D = new_D
+        prev_Lam = new_Lam 
+        prev_Q = new_Q
+
+    _time_start = time.time()
+    _final_temp = _final
+    PE = np.empty((M,M,t))
+    C_s = scipy.sparse.csc_matrix(C_E)
+    # D_s = scipy.sparse.csc_matrix(D_E)
+    dift1 = []
+    dift2 = []
+    dift3 = []
+    dift4 = []
+    _temp = 0
+    _flag = True
+    for i in range(1,t+1):
+        st1 = time.time()
+        Xp[:,i] = C_s@Xk[:,i-1]
+        PE[:,:,i-1]= C_s@P[:,:,i-1]@C_s.T+Q_E
+        # SK =D_s@PE[:,:,i-1]@D_s.T+Lam_E
+        # Xp[:,i] = np.dot(C_E,Xk[:,i-1])
+        # PE[:,:,i-1]= np.dot(C_E,np.dot(P[:,:,i-1],C_E.T))+Q_E
+        SK =np.dot(D_E,np.dot(PE[:,:,i-1],D_E.T))+Lam_E
+        if i!=1:
+            _flag = (np.linalg.norm(SK-_temp) > 1e-9)
+        st2 = time.time()
+        _temp = SK
+        if _flag:
+            sk_inv = np.linalg.inv(SK)
+        # st2 = time.time()
+        # sk_inv = np.linalg.inv(SK)
+        # else:
+        #     L = np.matmul(np.matmul(U.T,SK),U)
+        #     Linv = np.diag(1/np.diag(L))
+        
+        et1 = time.time()
+        
+        # sk_inv = np.matmul(np.matmul(U,Linv),U.T)
+        
+        # Kk = PE[:,:,i-1]@D_s.T@sk_inv
+        # P[:,:,i]=np.dot((np.eye(M)-Kk@D_s),PE[:,:,i-1])
+        # Xknew = Xp[:,i]+np.dot(Kk,(Y[:,i]-D_s@Xp[:,i]))
+        Kk = np.dot(PE[:,:,i-1],np.dot(D_E.T,sk_inv))
+        
+        P[:,:,i]=np.dot((np.eye(M)-np.dot(Kk,D_E)),PE[:,:,i-1])
+        
+        Xk[:,i] = Xp[:,i]+np.dot(Kk,(Y[:,i]-np.dot(D_E,Xp[:,i])))
+        zt = time.time()
+        dift1 = np.append(dift1,st2-st1)
+        dift2 = np.append(dift2,et1-st2)
+        dift3 = np.append(dift3,zt-et1)
+    print(np.mean(dift1))
+    print(np.mean(dift2))
+    print(np.mean(dift3))
+    print(zt-st1)
+    print('Xk-X',np.linalg.norm(Xk[:,:t]-X[:,1:]))
+
+    X_s = np.empty((M,t+1))
+    X_s[:,-1]=Xk[:,-1]
+    P_s = np.empty((M,M,t))
+    P_s[:,:,-1]=P[:,:,-1]
+    Ht= np.empty((M,M,t-1))
+    for i in reversed(range(1,t)):
+        Ht[:,:,i-1] = np.dot(P[:,:,i],np.dot(C_E,np.linalg.pinv(PE[:,:,i])))
+        X_s[:,i] = Xk[:,i+1]+np.dot(Ht[:,:,i-1],(X_s[:,i+1]-Xp[:,i+1]))
+        P_s[:,:,i-1] = P[:,:,i]+np.dot(Ht[:,:,i-1],np.dot((P_s[:,:,i]-PE[:,:,i]),Ht[:,:,i-1].T))
+    
+
+        
+    print('Xs-X',np.linalg.norm(X_s-X))
+
+    _final = X_s
+    # print(np.linalg.norm(_final_temp-_final)/np.linalg.norm(_final))
+    # if(np.linalg.norm(_final_temp-_final)/np.linalg.norm(_final)<1e-1):
+    #     break
+    D_E=np.dot(np.dot(Y[:,1:],X_s[:,1:].T),np.linalg.inv(np.dot(X_s[:,1:],X_s[:,1:].T)))
+    Lam_E=(1/t)*np.dot((Y[:,1:]-np.dot(D_E,X_s[:,1:])),(Y[:,1:]-np.dot(D_E,X_s[:,1:])).T)
+    Xs=X_s[:,2:t+1].copy()
+    Xc=X_s[:,1:t].copy()
+    # C_E=np.dot(np.dot(Xs,Xc.T),np.linalg.inv(np.dot(Xc,Xc.T)))
+    tmp=Xs-np.dot(C_E,Xc)
+    Q_E=(1/t)*np.dot(tmp,tmp.T)
+    # _, D_E, Lam_E, Q_E = Para_est(X_s[:,1:],Y[:,1:],P_s,Ht,given)
+    new_C = np.linalg.norm(C_E-prev_C_E)/np.linalg.norm(prev_C_E)
+    new_D = np.linalg.norm(D_E-prev_D_E)/np.linalg.norm(prev_D_E)
+    new_Lam = np.linalg.norm(Lam_E-prev_Lam_E)/np.linalg.norm(prev_Lam_E)
+    new_Q = np.linalg.norm(Q_E-prev_Q_E)/np.linalg.norm(prev_Q_E)
+    print(np.linalg.norm(Lam_E-prev_Lam_E)/np.linalg.norm(prev_Lam_E))
+    if (abs(new_C-prev_C)<1e-1):
+        given['C']=C_E
+    if (abs(new_D-prev_D)<1e-1):
+        given['D']=D_E
+    if (abs(new_Lam-prev_Lam)<1e-1):
+        given['Lam']=Lam_E
+    if (abs(new_Q-prev_Q)<1e-1):
+        given['Q']=Q_E
+    if 'C' in given and 'D' in given and 'Lam' in given and 'Q' in given:
+        break
+    _time_end = time.time()
+    print("total time",_time_end-_time_start)
+    # C_E[C_E<1e-5]=0
+    # D_E[D_E<1e-5]=0
+    # Lam_E[Lam_E<1e-5]=0
+    # Q_E[Q_E<1e-5]=0
+    # print(np.linalg.norm(C_E - C) )
+    # print(np.linalg.norm(Q_E - Q) )
+    # print(np.linalg.norm(D_E - D) )
+    # print(np.linalg.norm(Lam_E - Lam) )
+#%%
+if not _flag:
+    print(np.mean(dift1)+np.mean(dift2)+np.mean(dift3))
+# %%
+from pykalman import KalmanFilter
+kf = KalmanFilter(transition_matrices = C_E, observation_matrices =D_E,\
+    transition_covariance=Q_E,observation_covariance=Lam_E,\
+        initial_state_mean = Y[:,1].T, initial_state_covariance=P[:,:,0], em_vars=[
+      'transition_matrices', 'observation_matrices',
+      'transition_covariance', 'observation_covariance',
+    ])
+(smoothed_state_means, smoothed_state_covariances)=kf.smooth(Y[:,1:].T)
+_s_state = smoothed_state_means.T
+np.linalg.norm(_s_state[:,0:]-X[:,1:])
+
+
+
+#%%
+#aditi's method
+ITER=15
+n=t+1
+#initialize parameters
+
+C_est=np.zeros((M,M,ITER+1))
+D_est=np.zeros((M,M,ITER+1))
+Q_est=np.zeros((M,M,ITER+1))
+Lam_est=np.zeros((M,M,ITER+1))
+
+
+C_est[:,:,0]=5*np.eye(M)
+D_est[:,:,0]=3*np.eye(M)
+Q_est[:,:,0]=np.eye(M)
+Lam_est[:,:,0]=np.eye(M)
+
+# C_est[:,:,0]=np.eye(M)
+# D_est[:,:,0]=2*np.eye(M)
+# Q_est[:,:,0]=0.0006*np.eye(M)
+# Lam_est[:,:,0]=0.0003*np.eye(M)
+
+# C_est[:,:,0]=C.copy()
+# D_est[:,:,0]=D.copy()
+# Q_est[:,:,0]=Q.copy()
+# Lam_est[:,:,0]=Lam.copy()
+
+# C_est[:,:,0]=C_hat.copy()
+# D_est[:,:,0]=D_hat.copy()
+# Q_est[:,:,0]=Q_hat.copy()
+# Lam_est[:,:,0]=Lam_hat.copy()
+
+# print(np.linalg.norm(D-D_est[:,:,0])/np.linalg.norm(D))
+# print(np.linalg.norm(Lam-Lam_est[:,:,0])/np.linalg.norm(Lam))
+# print(np.linalg.norm(C-C_est[:,:,0])/np.linalg.norm(C))
+# print(np.linalg.norm(Q-Q_est[:,:,0])/np.linalg.norm(Q))
+
+# prev_D=np.linalg.norm(D-D_est[:,:,0])/np.linalg.norm(D)
+# prev_Lam=np.linalg.norm(Lam-Lam_est[:,:,0])/np.linalg.norm(Lam)
+# prev_C=np.linalg.norm(C-C_est[:,:,0])/np.linalg.norm(C)
+# prev_Q=np.linalg.norm(Q-Q_est[:,:,0])/np.linalg.norm(Q)
+
+prev_D=999
+prev_Lam=999
+prev_C=999
+prev_Q=999
+
+X_est=np.zeros((M,n,ITER))
+for itr in range(ITER):
+    X_est[:,0,itr]=Y[:,1].copy()
+
+
+
+
+for itr in range(ITER):
+    _time_start = time.time()
+    ## Kalman Filter
+    print('iter:',itr)
+    MUt=np.zeros((M,n))
+    P=np.zeros((M,M,n))
+#     P[:,:,0]=np.eye(M)
+#     MUt[:,0]=Y[:,0].copy()
+    PP=np.zeros((M,M,n))
+    PP[:,:,0]=np.eye(M)*10
+    
+    for i in range(1,n):
+        ##Prediction Step
+#         MUt[:,i]=np.dot(C_est[:,:,itr],MUt[:,i-1])
+        t1 = time.time()
+        MUt[:,i]=np.dot(C_est[:,:,itr],X_est[:,i-1,itr])
+        P[:,:,i]=np.dot(np.dot(C_est[:,:,itr],PP[:,:,i-1]),C_est[:,:,itr].T)+Q_est[:,:,itr]
+        t2 = time.time()
+        ##Update Step
+        SS=np.dot(D_est[:,:,itr],np.dot(P[:,:,i],D_est[:,:,itr].T))+Lam_est[:,:,itr]
+        Gain=np.dot(np.dot(P[:,:,i],D_est[:,:,itr].T),np.linalg.inv(SS))
+        t3 = time.time()
+        X_est[:,i,itr]=MUt[:,i]+np.dot(Gain,(Y[:,i]-np.dot(D_est[:,:,itr],MUt[:,i])))
+        PP[:,:,i]=P[:,:,i]-np.dot(np.dot(Gain,D_est[:,:,itr]),P[:,:,i])
+        t4 = time.time()
+#         PP[:,:,i]=np.linalg.inv(np.linalg.inv(P[:,:,i])+np.dot(np.dot(D_est[:,:,itr].T,np.linalg.inv(Lam_est[:,:,itr])),D_est[:,:,itr]))
+#         Gain=np.dot(np.dot(PP[:,:,i],D_est[:,:,itr].T),np.linalg.inv(Lam_est[:,:,itr]))
+#         X_est[:,i,itr]=MUt[:,i]+np.dot(Gain,(Y[:,i]-np.dot(D_est[:,:,itr],MUt[:,i])))
+    print(t3-t2)
+    print(t2-t1)
+    print(t4-t1)
+    only_KF=X_est.copy()
+    print(np.linalg.norm(X_est[:,:,itr]-X))    
+    ## Smoother
+    X_est_smth=np.zeros((M,n))
+    Phat=np.zeros((M,M,n))
+    X_est_smth[:,n-1]=X_est[:,n-1,itr].copy()
+    Phat[:,:,n-1]=PP[:,:,n-1].copy()
+    H=np.zeros((M,M,n))
+
+    for j in range(n-2,-1,-1):
+        H[:,:,j]=np.dot(np.dot(PP[:,:,j],C_est[:,:,itr].T),np.linalg.inv(P[:,:,j+1]))
+        X_est_smth[:,j]=X_est[:,j,itr]+np.dot(H[:,:,j],(X_est_smth[:,j+1]-MUt[:,j+1]))
+        Phat[:,:,j]=PP[:,:,j]+np.dot(np.dot(H[:,:,j],(Phat[:,:,j+1]-P[:,:,j+1])),H[:,:,j].T)
+#         H[:,:,j]=np.matmul(np.matmul(PP[:,:,j],C_est[:,:,itr].T),np.linalg.inv(P[:,:,j]))
+#         MUhat[:,j]=MUt[:,j]+np.matmul(H[:,:,j],(MUhat[:,j+1]-np.matmul(C_est[:,:,itr],MUt[:,j])))
+#         PPhat[:,:,j]=PP[:,:,j]+np.matmul(np.matmul(H[:,:,j],(PPhat[:,:,j+1]-PP[:,:,j])),H[:,:,j].T)
+
+#     X_est_smth=np.zeros((M,n))
+
+#     for i in range(n):
+#         Gain=np.dot(np.dot(PPhat[:,:,i],D_est[:,:,itr].T),np.linalg.inv(Lam_est[:,:,itr]))
+#         X_est_smth[:,i]=MUhat[:,i]+np.dot(Gain,(Y[:,i]-np.dot(D_est[:,:,itr],MUhat[:,i])))
+        
+#     X_est[:,:,itr]=X_est_smth
+    X_est[:,:,itr]=X_est_smth.copy()
+    
+    #MLE
+    D_est[:,:,itr+1]=np.dot(np.dot(Y,X_est[:,:,itr].T),np.linalg.inv(np.dot(X_est[:,:,itr],X_est[:,:,itr].T)))
+    Lam_est[:,:,itr+1]=(1/t)*np.dot((Y-np.dot(D_est[:,:,itr+1],X_est[:,:,itr])),(Y-np.dot(D_est[:,:,itr+1],X_est[:,:,itr])).T)
+    Xs=X_est[:,1:t+1,itr].copy()
+    Xc=X_est[:,0:t,itr].copy()
+    C_est[:,:,itr+1]=np.dot(np.dot(Xs,Xc.T),np.linalg.inv(np.dot(Xc,Xc.T)))
+    tmp=Xs-np.dot(C_est[:,:,itr+1],Xc)
+    Q_est[:,:,itr+1]=(1/t)*np.dot(tmp,tmp.T)
+#     Q_est[:,:,itr+1]=(1/n)*(np.dot(Xs,Xs.T)+np.dot(np.dot(Xs,Xc.T),C_est[:,:,itr+1].T)+np.dot(C_est[:,:,itr+1],np.dot(Xc,Xs.T))+np.dot(C_est[:,:,itr+1],np.dot(Xc,np.dot(Xc.T,C_est[:,:,itr+1].T))))
+#     Lam_est[:,:,itr+1]=(1/(n+1))*(np.dot(Y,Y.T)+np.dot(np.dot(Y,X_est[:,:,itr].T),D_est[:,:,itr+1].T)+np.dot(np.dot(D_est[:,:,itr+1],X_est[:,:,itr]),Y.T)+np.dot(np.dot(D_est[:,:,itr+1],X_est[:,:,itr]),np.dot(X_est[:,:,itr].T,D_est[:,:,itr+1].T)))
+
+    
+    
+#     print(np.linalg.norm(D-D_est[:,:,itr+1])/np.linalg.norm(D))
+#     print(np.linalg.norm(Lam-Lam_est[:,:,itr+1])/np.linalg.norm(Lam))
+#     print(np.linalg.norm(C-C_est[:,:,itr+1])/np.linalg.norm(C))
+#     print(np.linalg.norm(Q-Q_est[:,:,itr+1])/np.linalg.norm(Q))
+    new_D=np.linalg.norm(D_est[:,:,itr]-D_est[:,:,itr+1])/np.linalg.norm(D_est[:,:,itr])
+    new_Lam=np.linalg.norm(Lam_est[:,:,itr]-Lam_est[:,:,itr+1])/np.linalg.norm(Lam_est[:,:,itr])
+    new_C=np.linalg.norm(C_est[:,:,itr]-C_est[:,:,itr+1])/np.linalg.norm(C_est[:,:,itr])
+    new_Q=np.linalg.norm(Q_est[:,:,itr]-Q_est[:,:,itr+1])/np.linalg.norm(Q_est[:,:,itr])
+    _time_end = time.time()
+    print("total time",_time_start - _time_end) 
+    if abs(prev_D-new_D)<0.01 and abs(prev_Lam-new_Lam)<0.01 and abs(prev_C-new_C)<0.01 and abs(prev_Q-new_Q)<0.01:
+        print(new_D)
+        print(new_Lam)
+        print(new_C)
+        print(new_Q)
+        print('--')
+        ITER=itr+1
+        break
+    print(new_D)
+    print(new_Lam)
+    print(new_C)
+    print(new_Q)
+           
+    prev_D=new_D
+    prev_Lam=new_Lam
+    prev_C=new_C
+    prev_Q=new_Q
+
+# %%
+time_test = []
+temp = PE[:,:,i-1]
+temp[temp<1e-10]=0
+temp = scipy.sparse.csr_matrix(temp)
+for j in range(1000):
+    t1 = time.time()
+
+    Kk = temp.dot(np.dot(D_E.T,sk_inv))
+        
+    P[:,:,i]=(np.eye(M)-np.dot(Kk,D_E))@temp
+    
+    
+    t2 = time.time()
+    time_test = np.append(time_test,t2-t1)
+print(np.mean(time_test ))
+# %%
+time_test = []
+
+for j in range(1000):
+    temp = PE[:,:,i-1]
+    t1 = time.time()
+    Kk = np.dot(PE[:,:,i-1],np.dot(D_E.T,sk_inv))
+    P[:,:,i]=np.dot((np.eye(M)-np.dot(Kk,D_E)),PE[:,:,i-1])
+    
+    
+    t2 = time.time()
+    time_test = np.append(time_test,t2-t1)
+
+print(np.mean(time_test ))
+# %%
